@@ -1,0 +1,559 @@
+<!-- Continue from the end of the previous snippet -->
+<script>
+/* ═══════════════════════════════════════════════════════════════════
+   HOISTED STATE — declared first so every function below can access
+   these arrays without any Temporal Dead Zone (TDZ) errors.
+═══════════════════════════════════════════════════════════════════ */
+
+/* ── ORDER TRACKING MANAGEMENT ── */
+let trackingOrders = [
+  { id: 'ORD-101', customer: 'Aisha Al-Rashid', email: 'aisha@example.com', mobile: '+973 3901 2244', address: 'Building 45, Road 12, Seef District, Manama, Bahrain', date: '2025-05-28', items: [{name:'Sapphire Necklace', qty:1, price:9.9}], total: 9.9, status: 'delivered', carrier: 'Aramex', trackingNum: 'ARAM-BH-882341', notes: '' },
+  { id: 'ORD-102', customer: 'Noura Hassan', email: 'noura@example.com', mobile: '+973 6677 8899', address: 'Villa 12, Block 338, Adliya, Bahrain', date: '2025-05-27', items: [{name:'Pearl Halo Necklace', qty:1, price:14.0}], total: 14.0, status: 'shipped', carrier: 'DHL Express', trackingNum: 'DHL-992144', notes: 'Please wrap with an extra ribbon' }
+];
+
+/* ── MASTER PRODUCT ARRAY ── */
+const defaultProducts = [
+  { id: 'p1', name: 'Sapphire Spell Necklace', category: 'necklaces', collection: 'Sapphire Spell', price: 9.900, description: 'Artisan Luxe design featuring deep sapphire gemstones set in 14k gold-plated materials.' },
+  { id: 'p2', name: 'Pearl Halo Necklace', category: 'necklaces', collection: 'Pearl Halo', price: 14.000, description: 'Radiant freshwater pearl cradled in an elegant 18k gold-plated structural setting.' },
+  { id: 'p3', name: 'Rose Quartz Blossom Bracelet', category: 'bracelets', collection: 'Artisan Luxe', price: 11.500, description: 'Soft rose quartz gems paired with intricate handcrafted gold accents.' },
+  { id: 'p4', name: 'Lapis Lazuli Sovereign Set', category: 'sets', collection: 'Sapphire Spell', price: 28.000, description: 'Premium matching set displaying deep celestial blue lapis lazuli gemstones.' }
+];
+
+let cart = [];
+let activeFilter = 'all';
+let currentSlide = 0;
+let isAdminAuthenticated = false;
+
+// Format price utilities for Bahraini Dinar (BD) standard layout
+function formatBD(amount) {
+  return "BD " + Number(amount).toFixed(3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LIFE CYCLE & RENDER ENGINE
+═══════════════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  renderProducts();
+  populateProductSelect();
+  initTestimonials();
+  setupFormValidationListeners();
+});
+
+function renderProducts() {
+  const grid = document.getElementById('products-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const filtered = activeFilter === 'all' 
+    ? defaultProducts 
+    : defaultProducts.filter(p => p.category === activeFilter);
+
+  filtered.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    card.innerHTML = `
+      <div class="card-top-bar"></div>
+      <div class="product-info">
+        <span class="product-collection">${p.collection}</span>
+        <h3 class="product-name">${p.name}</h3>
+        <p style="font-size:0.7rem; color:var(--deep-emerald); margin:0.5rem 0 1rem; line-height:1.5;">${p.description}</p>
+        <div class="card-divider"></div>
+        <div class="product-footer">
+          <span class="product-price">${formatBD(p.price)}</span>
+          <button class="btn-add-inline" onclick="addToCart('${p.id}')">Add To Cart</button>
+        </div>
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function filterProducts(cat, btn) {
+  activeFilter = cat;
+  if (btn) {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  showPage('home');
+  renderProducts();
+  if (cat !== 'all') {
+    scrollToSection('collections');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CORE NAVIGATION
+═══════════════════════════════════════════════════════════════════ */
+function showPage(pageId, event) {
+  if (event) event.preventDefault();
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  
+  const targetPage = document.getElementById('page-' + pageId);
+  if (targetPage) {
+    targetPage.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  
+  if (pageId === 'cart') {
+    renderCart();
+  }
+}
+
+function scrollToSection(id) {
+  const el = document.getElementById(id);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   SHOPPING CART & PROMO ENGINE
+═══════════════════════════════════════════════════════════════════ */
+function addToCart(productId) {
+  const product = defaultProducts.find(p => p.id === productId);
+  if (!product) return;
+
+  const exist = cart.find(item => item.id === productId);
+  if (exist) {
+    exist.qty++;
+  } else {
+    cart.push({ ...product, qty: 1 });
+  }
+
+  updateCartBadge();
+  showToast("Added " + product.name + " to cart ✦");
+}
+
+function updateCartBadge() {
+  const count = cart.reduce((sum, item) => sum + item.qty, 0);
+  document.getElementById('cart-count').innerText = count;
+}
+
+function renderCart() {
+  const container = document.getElementById('cart-items-list');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (cart.length === 0) {
+    container.innerHTML = `
+      <div class="empty-cart">
+        <div class="icon">🛍</div>
+        <p>Your beautiful selection is empty.</p>
+        <button class="btn-solid" onclick="showPage('home')">Browse Collections</button>
+      </div>
+    `;
+    updateSummary(0);
+    document.getElementById('checkout-btn').disabled = true;
+    return;
+  }
+
+  cart.forEach(item => {
+    const el = document.createElement('div');
+    el.className = 'cart-item';
+    el.innerHTML = `
+      <div class="cart-item-img" style="color:white;">👑</div>
+      <div>
+        <h4 class="cart-item-name">${item.name}</h4>
+        <div class="cart-item-coll">${item.collection}</div>
+        <div class="qty-controls">
+          <button class="qty-btn" onclick="updateQty('${item.id}', -1)">-</button>
+          <span class="qty-display">${item.qty}</span>
+          <button class="qty-btn" onclick="updateQty('${item.id}', 1)">+</button>
+        </div>
+      </div>
+      <div class="cart-item-price">
+        <div class="price">${formatBD(item.price * item.qty)}</div>
+        <button class="remove-btn" onclick="removeFromCart('${item.id}')">Remove</button>
+      </div>
+    `;
+    container.appendChild(el);
+  });
+
+  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  updateSummary(subtotal);
+  validateCustomerForm();
+}
+
+function updateQty(id, delta) {
+  const item = cart.find(i => i.id === id);
+  if (!item) return;
+  item.qty += delta;
+  if (item.qty <= 0) {
+    removeFromCart(id);
+  } else {
+    renderCart();
+    updateCartBadge();
+  }
+}
+
+function removeFromCart(id) {
+  cart = cart.filter(i => i.id !== id);
+  renderCart();
+  updateCartBadge();
+}
+
+function updateSummary(subtotal) {
+  let discount = 0;
+  const promoInput = document.getElementById('promo-input').value.trim().toUpperCase();
+  
+  if (promoInput === 'QUEEN10') {
+    discount = subtotal * 0.10;
+    document.getElementById('discount-row').style.display = 'flex';
+    document.getElementById('summary-discount').innerText = "- " + formatBD(discount);
+  } else {
+    document.getElementById('discount-row').style.display = 'none';
+  }
+
+  const total = subtotal - discount;
+  document.getElementById('summary-subtotal').innerText = formatBD(subtotal);
+  document.getElementById('summary-total').innerText = formatBD(total);
+}
+
+function applyPromo() {
+  const code = document.getElementById('promo-input').value.trim().toUpperCase();
+  const msgEl = document.getElementById('promo-msg');
+  
+  if (cart.length === 0) {
+    msgEl.className = 'promo-msg error';
+    msgEl.innerText = "Add items to your cart first.";
+    return;
+  }
+
+  if (code === 'QUEEN10') {
+    msgEl.className = 'promo-msg success';
+    msgEl.innerText = "Promo code applied successfully! 10% off structural pricing.";
+  } else if (code === '') {
+    msgEl.innerText = '';
+  } else {
+    msgEl.className = 'promo-msg error';
+    msgEl.innerText = "Invalid verification coupon reference.";
+  }
+  renderCart();
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CHECKOUT & LIVE VALIDATION FIELD LOGIC
+═══════════════════════════════════════════════════════════════════ */
+function setupFormValidationListeners() {
+  const fields = ['cinfo-name', 'cinfo-email', 'cinfo-phone', 'cinfo-address'];
+  fields.forEach(fId => {
+    const el = document.getElementById(fId);
+    if (el) {
+      el.addEventListener('input', validateCustomerForm);
+    }
+  });
+}
+
+function validateCustomerForm() {
+  if (cart.length === 0) {
+    document.getElementById('checkout-btn').disabled = true;
+    return false;
+  }
+
+  const name = document.getElementById('cinfo-name').value.trim();
+  const email = document.getElementById('cinfo-email').value.trim();
+  const phone = document.getElementById('cinfo-phone').value.trim();
+  const address = document.getElementById('cinfo-address').value.trim();
+  const errorEl = document.getElementById('cinfo-error');
+
+  let valid = true;
+  let msg = "";
+
+  if (!name || !email || !phone || !address) {
+    valid = false;
+  } else if (!email.includes('@') || email.length < 5) {
+    valid = false;
+    msg = "Please enter a valid structural email profile.";
+  }
+
+  if (!valid && msg) {
+    errorEl.style.display = 'block';
+    errorEl.innerText = msg;
+  } else {
+    errorEl.style.display = 'none';
+  }
+
+  document.getElementById('checkout-btn').disabled = !valid;
+  return valid;
+}
+
+let selectedPaymentMethod = "Benefit Pay";
+function selectPayment(element) {
+  document.querySelectorAll('.payment-method').forEach(m => m.classList.remove('selected'));
+  element.classList.add('selected');
+  selectedPaymentMethod = element.querySelector('.payment-name').innerText;
+}
+
+function placeOrder() {
+  if (!validateCustomerForm()) return;
+
+  const name = document.getElementById('cinfo-name').value.trim();
+  const email = document.getElementById('cinfo-email').value.trim();
+  const phone = document.getElementById('cinfo-phone').value.trim();
+  const address = document.getElementById('cinfo-address').value.trim();
+  const notes = document.getElementById('order-notes').value.trim();
+  
+  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  let discount = document.getElementById('promo-input').value.trim().toUpperCase() === 'QUEEN10' ? subtotal * 0.10 : 0;
+  const grandTotal = subtotal - discount;
+
+  const nextOrderNum = 'ORD-' + (100 + trackingOrders.length + 1);
+  
+  const newOrder = {
+    id: nextOrderNum,
+    customer: name,
+    email: email,
+    mobile: phone,
+    address: address,
+    date: new Date().toISOString().split('T')[0],
+    items: [...cart],
+    total: grandTotal,
+    status: 'placed',
+    carrier: 'Local Delivery Fleet',
+    trackingNum: 'PENDING-ASSIGNMENT',
+    notes: notes
+  };
+
+  trackingOrders.push(newOrder);
+  
+  // Clear layout operational states
+  cart = [];
+  updateCartBadge();
+  document.getElementById('cinfo-name').value = '';
+  document.getElementById('cinfo-email').value = '';
+  document.getElementById('cinfo-phone').value = '';
+  document.getElementById('cinfo-address').value = '';
+  document.getElementById('order-notes').value = '';
+  document.getElementById('promo-input').value = '';
+  document.getElementById('promo-msg').innerText = '';
+
+  // Trigger Confirmation Engine
+  document.getElementById('popup-tracking-code').innerText = "#" + nextOrderNum;
+  document.getElementById('order-success-popup-overlay').classList.add('show');
+}
+
+function closeOrderSuccessPopup() {
+  document.getElementById('order-success-popup-overlay').classList.remove('show');
+  showPage('home');
+}
+
+function copyAndTrack() {
+  const reference = document.getElementById('popup-tracking-code').innerText.replace('#', '');
+  navigator.clipboard.writeText(reference).then(() => {
+    showToast("Tracking code copied perfectly ✦");
+    closeOrderSuccessPopup();
+    scrollToSection('home-track-section');
+    document.getElementById('ht-order-id').value = reference;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   REAL-TIME ORDER TRACKING SYSTEM (FRONT-FACING)
+═══════════════════════════════════════════════════════════════════ */
+function homeTrackOrder() {
+  const orderId = document.getElementById('ht-order-id').value.trim().toUpperCase();
+  const email = document.getElementById('ht-email').value.trim().toLowerCase();
+  const resultPanel = document.getElementById('home-track-result');
+
+  if (!orderId || !email) {
+    resultPanel.className = "home-track-result error show";
+    resultPanel.innerHTML = `<p style="color:#E24B4A; font-size:0.75rem;">Please provide both structural tracking inputs to perform verification.</p>`;
+    return;
+  }
+
+  const match = trackingOrders.find(o => o.id.toUpperCase() === orderId && o.email.toLowerCase() === email);
+
+  if (!match) {
+    resultPanel.className = "home-track-result error show";
+    resultPanel.innerHTML = `<p style="color:#E24B4A; font-size:0.75rem;">No matching order file found matching details provided.</p>`;
+    return;
+  }
+
+  let badgeClass = "status-placed";
+  if (match.status === 'processing') badgeClass = "status-processing";
+  if (match.status === 'shipped') badgeClass = "status-shipped";
+  if (match.status === 'out') badgeClass = "status-out";
+  if (match.status === 'delivered') badgeClass = "status-delivered";
+
+  resultPanel.className = "home-track-result success show";
+  resultPanel.innerHTML = `
+    <div class="htr-status-row">
+      <span class="htr-order-id">${match.id}</span>
+      <span class="status-badge ${badgeClass}">${match.status}</span>
+    </div>
+    <div class="htr-grid">
+      <div class="htr-item"><label>Customer Profile</label><span>${match.customer}</span></div>
+      <div class="htr-item"><label>Date Filed</label><span>${match.date}</span></div>
+      <div class="htr-item"><label>Order Total</label><span>${formatBD(match.total)}</span></div>
+      <div class="htr-item"><label>Destination Fleet</label><span>${match.address.split(',')[0]}</span></div>
+    </div>
+    <div class="htr-carrier">
+      <strong>Logistics:</strong> ${match.carrier} &nbsp;|&nbsp; <strong>Airway Bill:</strong> ${match.trackingNum}
+    </div>
+  `;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   ADMINISTRATIVE INTERFACES
+═══════════════════════════════════════════════════════════════════ */
+function openAdminGate(e) {
+  if (e) e.preventDefault();
+  showPage('admin');
+}
+
+function adminLogin() {
+  const pk = document.getElementById('admin-passkey').value;
+  // Fallback dev token for unlinked artisan instance
+  if (pk === 'queens2025' || pk === 'admin') {
+    isAdminAuthenticated = true;
+    document.getElementById('admin-login').style.display = 'none';
+    document.getElementById('admin-panel').classList.add('active');
+    renderAdminOrders();
+  } else {
+    const err = document.getElementById('admin-login-error');
+    err.style.display = 'block';
+  }
+}
+
+function switchAdminTab(tabId, btn) {
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.remove('active'));
+  
+  btn.classList.add('active');
+  document.getElementById('tab-' + tabId).classList.add('active');
+
+  if (tabId === 'orders') renderAdminOrders();
+}
+
+function populateProductSelect() {
+  const sel = document.getElementById('order-product');
+  if (!sel) return;
+  defaultProducts.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.name;
+    opt.innerText = p.name + " (" + formatBD(p.price) + ")";
+    sel.appendChild(opt);
+  });
+}
+
+function renderAdminOrders() {
+  const tbody = document.getElementById('orders-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  trackingOrders.forEach(o => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="order-id">${o.id}</td>
+      <td>${o.date}</td>
+      <td><strong>${o.customer}</strong><br><span style="font-size:0.65rem;">${o.email}</span></td>
+      <td>${o.items.map(i => i.name + ' x' + i.qty).join(', ')}</td>
+      <td class="order-total">${formatBD(o.total)}</td>
+      <td><span class="status-badge status-${o.status}">${o.status}</span></td>
+      <td>
+        <button class="track-btn" onclick="deleteOrder('${o.id}')">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function openOrderModal() {
+  document.getElementById('order-modal').classList.add('show');
+}
+function closeOrderModal() {
+  document.getElementById('order-modal').classList.remove('show');
+}
+
+function submitOrder() {
+  const customer = document.getElementById('order-customer').value.trim();
+  const email = document.getElementById('order-email').value.trim();
+  const mobile = document.getElementById('order-mobile').value.trim();
+  const address = document.getElementById('order-address').value.trim();
+  const pName = document.getElementById('order-product').value;
+  const total = parseFloat(document.getElementById('order-total').value) || 0;
+  const dStatus = document.getElementById('order-delivery-status').value;
+  const carrier = document.getElementById('order-carrier').value.trim() || 'Local Runner';
+  const tNum = document.getElementById('order-tracking-num').value.trim() || 'N/A';
+
+  if (!customer || !email) {
+    alert("Customer verification identity is structural require.");
+    return;
+  }
+
+  const manualObj = {
+    id: 'ORD-' + (100 + trackingOrders.length + 1),
+    customer, email, mobile, address,
+    date: new Date().toISOString().split('T')[0],
+    items: [{ name: pName || 'Custom Line Item', qty: 1, price: total }],
+    total,
+    status: dStatus,
+    carrier,
+    trackingNum: tNum,
+    notes: 'Manually logged structural record'
+  };
+
+  trackingOrders.push(manualObj);
+  closeOrderModal();
+  renderAdminOrders();
+  showToast("Manual system record cataloged.");
+}
+
+function deleteOrder(id) {
+  if (confirm("Confirm structural destruction of order file: " + id + "?")) {
+    trackingOrders = trackingOrders.filter(o => o.id !== id);
+    renderAdminOrders();
+  }
+}
+
+function saveSettings() {
+  const b = document.getElementById('setting-benefit').value;
+  const p = document.getElementById('setting-paypal').value;
+  
+  document.getElementById('cart-benefit-pay').innerText = b;
+  document.getElementById('cart-paypal').innerText = p;
+
+  const msg = document.getElementById('settings-msg');
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 3000);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TESTIMONIAL AUTO-SLIDER ENGINE
+═══════════════════════════════════════════════════════════════════ */
+function initTestimonials() {
+  setInterval(() => {
+    let next = currentSlide + 1;
+    if (next >= 3) next = 0;
+    goToSlide(next);
+  }, 7000);
+}
+
+function goToSlide(index) {
+  currentSlide = index;
+  const slides = document.querySelectorAll('.testimonial-slide');
+  const dots = document.querySelectorAll('.testimonial-dot');
+  
+  slides.forEach((s, idx) => {
+    s.classList.toggle('active', idx === index);
+  });
+  dots.forEach((d, idx) => {
+    d.classList.toggle('active', idx === index);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   TOAST SYSTEM NOTIFICATIONS
+═══════════════════════════════════════════════════════════════════ */
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  if (!toast) return;
+  toast.innerText = msg;
+  toast.classList.add('show');
+  setTimeout(() => {
+    toast.classList.remove('show');
+  }, 2500);
+}
+</script>
+</body>
+</html>
